@@ -1,5 +1,5 @@
-from sqlmodel import Field, Session, SQLModel, select, Relationship
-
+from sqlmodel import Session, select
+from sqlalchemy.orm import selectinload
 
 from src.ports.repositories.sql_brick_repository_schema import Colour, Shape, SetPartLink, InventoryPartLink, Part, Set, User, Inventory
 
@@ -10,6 +10,7 @@ from src.domain.entities.part import Part as DomainPart
 from src.domain.entities.set import Set as DomainSet
 from src.domain.entities.colour import Colour as DomainColour
 from src.domain.entities.shape import Shape as DomainShape
+
 
 
 
@@ -68,13 +69,12 @@ class SQLBrickRepository(BricksRepository):
             shape = self.get_shape_by_id(db_part.shape_id)
             return DomainPart(id=db_part.id, name=db_part.name, colour=colour,  shape=shape)
 
-
     def get_all_parts(self) -> list[DomainPart]:
         with self.session as session:
             parts = session.exec(select(Part)).all()
             return [DomainPart(id=part.id, name=part.name,
-                               colour=DomainColour(id=part.colour.id, name=part.colour.name),
-                               shape=DomainShape(id=part.shape.id, name=part.shape.name)) for part in parts]
+                               colour= self.get_colour_by_id(part.colour_id),
+                               shape= self.get_shape_by_id(part.shape_id)) for part in parts]
         
     def get_part_quantity_in_set(self, set_id: int, part_id: int) -> int:
         with self.session as session:
@@ -127,7 +127,9 @@ class SQLBrickRepository(BricksRepository):
     def get_all_sets(self) -> list[DomainSet]:
         with self.session as session:
             sets = []
-            db_sets = session.exec(select(Set)).all()
+            db_sets = session.exec(select(Set).options(
+            selectinload(Set.parts))).all()
+
             for db_set in db_sets:
                 parts = {}
                 for link in db_set.parts:
@@ -201,9 +203,7 @@ class SQLBrickRepository(BricksRepository):
             db_user = session.get(User, user_id)
             if not db_user:
                 return None
-            print
             inventory = self.get_inventory_by_id(db_user.inventory_id)
-            print("Fetched Inventory for User:", inventory)
             return DomainUser(id=db_user.id, name=db_user.name, inventory=inventory)
 
     def create_user(self, user: DomainUser) -> DomainUser:

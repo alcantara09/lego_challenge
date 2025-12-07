@@ -1,8 +1,5 @@
 import pytest
 
-from sqlmodel import Session, create_engine, SQLModel
-
-from src.ports.repositories.sql_brick_repository import SQLBrickRepository
 from src.domain.entities.user import User as DomainUser
 from src.domain.entities.inventory import Inventory as DomainInventory
 from src.domain.entities.part import Part as DomainPart
@@ -10,18 +7,6 @@ from src.domain.entities.set import Set as DomainSet
 from src.domain.entities.colour import Colour as DomainColour
 from src.domain.entities.shape import Shape as DomainShape 
 from src.ports.repositories.bricks_repository import BricksRepository
-
-@pytest.fixture
-def in_memory_session() -> Session:
-    sqlite_url = "sqlite:///:memory:"
-    engine = create_engine(sqlite_url, echo=False)
-    SQLModel.metadata.create_all(engine)
-    return Session(engine)
-
-@pytest.fixture
-def brick_repository(in_memory_session) -> BricksRepository:
-    return SQLBrickRepository(in_memory_session)
-
 
 def test_create_sample_colour(brick_repository: BricksRepository):
     colour = DomainColour(name="Red")
@@ -121,8 +106,6 @@ def test_create_sample_inventory_with_part_id(brick_repository: BricksRepository
 
     inventory_entity = DomainInventory(parts={db_part.id: 10})
     db_inventory = brick_repository.create_inventory(inventory_entity)
-
-    print("Created Inventory ID:", db_inventory)
 
     assert db_inventory.id is not None
     assert db_inventory.parts[db_part.id] == 10

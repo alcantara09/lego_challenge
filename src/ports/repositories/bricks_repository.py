@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Any
-from uuid import UUID
 from src.domain.entities.set import Set
 from src.domain.entities.user import User
 from src.domain.entities.inventory import Inventory
+from src.domain.entities.part import Part
+from src.domain.entities.colour import Colour
 
 class BricksRepository(ABC):
     @abstractmethod
@@ -11,7 +12,7 @@ class BricksRepository(ABC):
         pass
 
     @abstractmethod
-    def get_parts_by_set_id(self, set_id: UUID) -> dict[int, int]:
+    def get_parts_by_set_id(self, set_id: int) -> dict[int, int]:
         pass
     
     @abstractmethod
@@ -19,7 +20,7 @@ class BricksRepository(ABC):
         pass
     
     @abstractmethod
-    def get_inventory_of_user(self, user_id: UUID) -> Inventory:
+    def get_inventory_of_user(self, user_id: int) -> Inventory:
         pass
 
     @abstractmethod
@@ -31,5 +32,9 @@ class BricksRepository(ABC):
         pass
 
     @abstractmethod
-    def get_all_colours(self) -> list[Any]:
+    def get_all_colours(self) -> list[Colour]:
+        pass
+
+    @abstractmethod
+    def get_all_parts(self) -> list[Part]:
         pass

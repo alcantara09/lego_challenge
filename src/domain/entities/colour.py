@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
-from uuid import UUID, uuid4
 
 @dataclass
 class Colour:
     name: str
-    id: UUID = field(default_factory=uuid4)
+    id: int = field(default_factory=int)
