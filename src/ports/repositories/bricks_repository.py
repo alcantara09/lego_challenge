@@ -22,10 +22,6 @@ class BricksRepository(ABC):
     @abstractmethod
     def get_set_by_name(self, name: str) -> Set:
         pass
-    
-    @abstractmethod
-    def get_inventory_of_user(self, user_id: int) -> Inventory:
-        pass
 
     @abstractmethod
     def create_colour(self, colour: Any) -> Any:

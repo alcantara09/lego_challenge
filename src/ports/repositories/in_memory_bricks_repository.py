@@ -3,6 +3,7 @@ from src.domain.entities.user import User
 from src.domain.entities.colour import Colour
 from src.domain.entities.part import Part
 from src.domain.entities.inventory import Inventory
+from src.domain.entities.set import SetItem
 from src.ports.repositories.bricks_repository import BricksRepository
 
 class InMemoryBricksRepository(BricksRepository):
@@ -12,20 +13,15 @@ class InMemoryBricksRepository(BricksRepository):
     def get_all_sets(self) -> list[Set]:
         return self.sets
     
-    def get_parts_by_set_id(self, set_id: int) -> dict[int, int]:
-        parts = {}
-        set = next((s for s in self.sets if s.id == set_id), None)
-        return set.required_parts if set else parts
+    def get_parts_by_set_id(self, set_id: int) -> list[SetItem]:
+        lego_set = next((s for s in self.sets if s.id == set_id), None)
+        return lego_set.parts if lego_set else []
     
     def get_set_by_id(self, set_id: int) -> Set:
         return next((s for s in self.sets if s.id == set_id), None)
     
     def get_set_by_name(self, name: str) -> Set:
         return next((s for s in self.sets if s.name == name), None)
-        
-    def get_inventory_of_user(self, user_id: int) -> Inventory:
-        user = next((u for u in self.users if u.id == user_id), None)
-        return user.inventory if user else None
     
     def create_colour(self, colour: Colour) -> Colour:
         pass
@@ -48,4 +44,7 @@ class InMemoryBricksRepository(BricksRepository):
 
     def get_all_parts(self) -> list[Part]:
         pass
+
+    def get_inventory_by_id(self, inventory_id: int) -> Inventory:
+        return
     
