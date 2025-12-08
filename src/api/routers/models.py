@@ -81,3 +81,15 @@ def set_to_model(lego_set: Set) -> SetModel:
         name=lego_set.name,
         parts=set_items
     )
+
+def part_to_model(part) -> PartModel:
+    return PartModel(
+        id=part.id,
+        name=part.name,
+        colour=ColourModel(id=part.colour.id, name=part.colour.name),
+        shape=ShapeModel(id=part.shape.id, name=part.shape.name)
+    )
+
+def colour_to_model(colour) -> ColourModel:
+    """Convert Colour domain entity to Pydantic ColourModel"""
+    return ColourModel(id=colour.id, name=colour.name)
