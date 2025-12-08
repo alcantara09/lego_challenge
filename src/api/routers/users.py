@@ -6,6 +6,7 @@ from src.domain.entities.user import User
 from src.ports.repositories.bricks_repository import BricksRepository
 from src.api.dependencies import get_analyse_buildability_use_case, get_brick_repository, get_session
 from src.domain.use_cases.analyse_buildability import AnalyseBuildability
+from src.api.routers.models import set_to_model, user_to_model
 
 router = APIRouter(prefix="/api", tags=["users"])
 
@@ -16,28 +17,41 @@ UseCaseDep = Annotated[AnalyseBuildability, Depends(get_analyse_buildability_use
 @router.get("/users/")
 async def get_all_users(repository: RepoDep, offset: int = 0, limit: int = 100):
     users = repository.get_all_users()
-    return {"message": "List of users", "data": [[user.id, user.name] for user in users]}
+    if not users:
+        return {"data": []}
+    user_models = [user_to_model(user) for user in users]
+    return {"message": "List of users", "data": [ [model.id, model.name] for model in user_models]}
 
 @router.get("/user/by-id/{user_id}")
 async def read_user(repository: RepoDep,user_id: int):
-    return repository.get_user_by_id(user_id)
+    user = repository.get_user_by_id(user_id)
+    if user is None:
+        return {"data": []}, status.HTTP_404_NOT_FOUND
+    return user_to_model(repository.get_user_by_id(user_id))
 
 @router.get("/user/by-id/{user_id}/possible-sets")
 async def read_user_possible_sets(analyse_buildability_use_case: UseCaseDep, user_id: int):
     sets = analyse_buildability_use_case.get_possible_sets_for_user_inventory(user_id)
-    return {"possible_sets": "Possible sets for user", "data": [[s.id, s.name] for s in sets]}
+    if not sets:
+        return {"data": []}
+    return {"data": [set_to_model(s) for s in sets]}
 
 @router.get("/user/by-id/{user_id}/set/{set_id}/suggest-users")
 async def read_user_suggest_users_for_set(analyse_buildability_use_case: UseCaseDep, user_id: int, set_id: int):
     user = analyse_buildability_use_case.bricks_repository.get_user_by_id(user_id)
     suggested_users = analyse_buildability_use_case.suggest_users_for_part_sharing(user, set_id)
-    return {"suggested_users": "Suggested users for part sharing", "data": suggested_users}
+    return {"data": suggested_users}
 
 @router.get("/user/by-name/{name}")
 async def get_user_by_name(repository: RepoDep, name: str):
-    return repository.get_user_by_name(name)
+    user = repository.get_user_by_name(name)
+    if user is None:
+        return {"data": []}, status.HTTP_404_NOT_FOUND
+    model = user_to_model(user)
+    parts = {item.part.name: item.quantity for item in model.inventory.parts}
+    return {"data": [[model.id, model.name, parts]]}
 
 @router.get("/users/part-usage/{percentage}")
 async def get_parts_with_percentage_of_usage(analyse_buildability_use_case: UseCaseDep, percentage: float = 0.5):
     parts_usage = analyse_buildability_use_case.get_parts_with_percentage_of_usage(percentage)
-    return {"parts_usage": "Parts with usage above percentage", "data": parts_usage}
+    return {"data": parts_usage}
