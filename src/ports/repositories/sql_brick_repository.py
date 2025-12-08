@@ -1,15 +1,25 @@
 from sqlmodel import Session, select
-from sqlalchemy.orm import selectinload
-
-from src.ports.repositories.sql_brick_repository_schema import Colour, Shape, SetPartLink, InventoryPartLink, Part, Set, User, Inventory
+from src.ports.repositories.sql_brick_repository_schema import (
+    Colour,
+    Shape,
+    SetPartLink,
+    InventoryPartLink,
+    Part,
+    Set,
+    User,
+    Inventory,
+)
 
 from src.ports.repositories.bricks_repository import BricksRepository
 from src.domain.entities.user import User as DomainUser
 from src.domain.entities.inventory import Inventory as DomainInventory
 from src.domain.entities.part import Part as DomainPart
 from src.domain.entities.set import Set as DomainSet
+from src.domain.entities.set import SetItem as DomainSetItem
 from src.domain.entities.colour import Colour as DomainColour
 from src.domain.entities.shape import Shape as DomainShape
+from src.domain.entities.inventory import InventoryItem as DomainInventoryItem
+
 
 class SQLBrickRepository(BricksRepository):
     def __init__(self, session: Session):
@@ -22,17 +32,14 @@ class SQLBrickRepository(BricksRepository):
             session.commit()
             session.refresh(db_colour)
             return DomainColour(id=db_colour.id, name=db_colour.name)
-        
-    def get_colour_by_id(self, colour_id: int) -> DomainColour:
-        with self.session as session:
-            db_colour = session.get(Colour, colour_id)
-            return DomainColour(id=db_colour.id, name=db_colour.name)
 
     def get_all_colours(self) -> list[DomainColour]:
         with self.session as session:
             db_colours = session.exec(select(Colour)).all()
-            return [DomainColour(id=colour.id, name=colour.name) for colour in db_colours]
-        
+            return [
+                DomainColour(id=colour.id, name=colour.name) for colour in db_colours
+            ]
+
     def create_shape(self, shape: DomainShape) -> DomainShape:
         with self.session as session:
             db_shape = Shape(name=shape.name)
@@ -40,227 +47,543 @@ class SQLBrickRepository(BricksRepository):
             session.commit()
             session.refresh(db_shape)
             return DomainShape(id=db_shape.id, name=db_shape.name)
-    
-    def get_shape_by_id(self, shape_id: int) -> DomainShape:
-        with self.session as session:
-            db_shape = session.get(Shape, shape_id)
-            return DomainShape(id=db_shape.id, name=db_shape.name)
-        
+
     def create_part(self, part: DomainPart) -> DomainPart:
         with self.session as session:
-            db_part = Part(name=part.name, colour_id=part.colour.id, shape_id=part.shape.id)
+            db_part = Part(
+                name=part.name, colour_id=part.colour.id, shape_id=part.shape.id
+            )
             session.add(db_part)
             session.commit()
             session.refresh(db_part)
             colour = DomainColour(id=part.colour.id, name=part.colour.name)
             shape = DomainShape(id=part.shape.id, name=part.shape.name)
-            return DomainPart(id=db_part.id, name=db_part.name, colour=colour, shape=shape)
+            return DomainPart(
+                id=db_part.id, name=db_part.name, colour=colour, shape=shape
+            )
 
-    def get_part_by_id(self, part_id: int) -> DomainPart | None:
+    def get_all_parts(self, offset: int = 0, limit: int = 100) -> list[DomainPart]:
         with self.session as session:
-            db_part = session.get(Part, part_id)
-            if not db_part:
-                return None
+            statement = (
+                select(
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name")
+                )
+                .join(Colour, Part.colour_id == Colour.id)
+                .join(Shape, Part.shape_id == Shape.id)
+                .offset(offset)
+                .limit(limit)
+            )
             
-            colour = self.get_colour_by_id(db_part.colour_id)
-            shape = self.get_shape_by_id(db_part.shape_id)
-            return DomainPart(id=db_part.id, name=db_part.name, colour=colour,  shape=shape)
+            results = session.exec(statement).all()
+            
+            parts = []
+            for row in results:
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(
+                    id=row.part_id,
+                    name=row.part_name,
+                    colour=colour,
+                    shape=shape
+                )
+                parts.append(part)
+            
+            return parts
 
-    def get_all_parts(self) -> list[DomainPart]:
+    def create_set(self, lego_set: DomainSet) -> DomainSet:
         with self.session as session:
-            parts = session.exec(select(Part)).all()
-            return [DomainPart(id=part.id, name=part.name,
-                               colour= self.get_colour_by_id(part.colour_id),
-                               shape= self.get_shape_by_id(part.shape_id)) for part in parts]
-        
-    def get_part_quantity_in_set(self, set_id: int, part_id: int) -> int:
-        with self.session as session:
-            statement = select(SetPartLink).where(
-                SetPartLink.set_id == set_id,
-                SetPartLink.part_id == part_id
-            )
-            link = session.exec(statement).first()
-            if link:
-                return link.quantity
-            return 0
-    
-    def get_part_quantity_in_inventory(self, inventory_id: int, part_id: int) -> int:
-        with self.session as session:
-            statement = select(InventoryPartLink).where(
-                InventoryPartLink.inventory_id == inventory_id,
-                InventoryPartLink.part_id == part_id
-            )
-            link = session.exec(statement).first()
-            if link:
-                return link.quantity
-            return 0
-
-    def create_set(self, set: DomainSet) -> DomainSet:
-        with self.session as session:    
-            db_set = Set(name=set.name)
+            # Create set
+            db_set = Set(name=lego_set.name)
             session.add(db_set)
-            session.flush()
-
-            for part_id, qty in set.required_parts.items():
-                db_part = session.get(Part, part_id)
-                if not db_part:
-                    raise ValueError(f"Part with id {part_id} does not exist.")
-                    
-                else:
-                    link = SetPartLink(set_id=db_set.id, part_id=part_id, quantity=qty)
-                    session.add(link)
-            
             session.commit()
             session.refresh(db_set)
+            
+            # Create SetPartLink entries for each part
+            valid_items = []
+            for item in lego_set.parts:
+                # Check if part exists
+                db_part = session.get(Part, item.part.id)
+                if db_part is None:
+                    raise ValueError(f"Part with id {item.part.id} does not exist")
+                
+                set_part_link = SetPartLink(
+                    set_id=db_set.id,
+                    part_id=item.part.id,
+                    quantity=item.quantity
+                )
+                session.add(set_part_link)
+                valid_items.append(item)
+            
+            session.commit()
+            
+            return DomainSet(
+                id=db_set.id,
+                name=db_set.name,
+                parts=valid_items
+            )
 
-            parts = {}
-            for link in db_set.parts:
-                quantity = self.get_part_quantity_in_set(db_set.id, link.id)
-                parts[link.id] = quantity
-
-            set = DomainSet(id=db_set.id, name=db_set.name, required_parts=parts)
-            return db_set
-
-    def get_all_sets(self) -> list[DomainSet]:
+    def get_all_sets(self, offset: int = 0, limit: int = 100) -> list[DomainSet]:
         with self.session as session:
-            sets = []
-            db_sets = session.exec(select(Set).options(
-            selectinload(Set.parts))).all()
+            statement = (
+                select(
+                    Set.id.label("set_id"),
+                    Set.name.label("set_name"),
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    SetPartLink.quantity.label("quantity")
+                )
+                .outerjoin(SetPartLink, Set.id == SetPartLink.set_id)
+                .outerjoin(Part, SetPartLink.part_id == Part.id)
+                .outerjoin(Colour, Part.colour_id == Colour.id)
+                .outerjoin(Shape, Part.shape_id == Shape.id)
+                .offset(offset)
+                .limit(limit)
+            )
+            
+            results = session.exec(statement).all()
+            
+            # Group results by set
+            sets_dict: dict[int, dict] = {}
+            for row in results:
+                set_id = row.set_id
+                
+                if set_id not in sets_dict:
+                    sets_dict[set_id] = {
+                        "set_id": row.set_id,
+                        "set_name": row.set_name,
+                        "items": []
+                    }
+                
+                # Skip if no part (empty set)
+                if row.part_id is None:
+                    continue
+                
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(id=row.part_id, name=row.part_name, colour=colour, shape=shape)
+                
+                set_item = DomainSetItem(part=part, quantity=row.quantity)
+                sets_dict[set_id]["items"].append(set_item)
+            
+            # Convert to domain objects
+            domain_sets = []
+            for set_data in sets_dict.values():
+                domain_set = DomainSet(
+                    id=set_data["set_id"],
+                    name=set_data["set_name"],
+                    parts=set_data["items"]
+                )
+                domain_sets.append(domain_set)
+            
+            return domain_sets
 
-            for db_set in db_sets:
-                parts = {}
-                for link in db_set.parts:
-                    quantity = self.get_part_quantity_in_set(db_set.id, link.id)
-                    parts[link.id] = quantity
-                set_entity = DomainSet(id=db_set.id, name=db_set.name, required_parts=parts)
-                sets.append(set_entity)
-            return sets
-        
-    def get_parts_by_set_id(self, set_id: int) -> dict[int, int]:
+    def get_set_by_id(self, set_id: int) -> DomainSet | None:
         with self.session as session:
-            set_obj = session.get(Set, set_id)
-            if not set_obj:
-                return {}
-            parts_dict = {}
-            for link in set_obj.parts:
-                quantity = self.get_part_quantity_in_set(set_obj.id, link.id)
-                parts_dict[link.id] = quantity
-            return parts_dict
-        
-    def get_set_by_id(self, set_id: int) -> DomainSet:
-        with self.session as session:
-            db_set = session.get(Set, set_id)
-            if not db_set:
+            statement = (
+                select(
+                    Set.id.label("set_id"),
+                    Set.name.label("set_name"),
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    SetPartLink.quantity.label("quantity")
+                )
+                .outerjoin(SetPartLink, Set.id == SetPartLink.set_id)
+                .outerjoin(Part, SetPartLink.part_id == Part.id)
+                .outerjoin(Colour, Part.colour_id == Colour.id)
+                .outerjoin(Shape, Part.shape_id == Shape.id)
+                .where(Set.id == set_id)
+            )
+            
+            results = session.exec(statement).all()
+            
+            if not results:
                 return None
-            parts = {}
-            for link in db_set.parts:
-                quantity = self.get_part_quantity_in_set(db_set.id, link.id)
-                parts[link.id] = quantity
-            set_entity = DomainSet(id=db_set.id, name=db_set.name, required_parts=parts)
-            return set_entity
-        
-    def get_set_by_name(self, name: str) -> DomainSet:
+            
+            # Build set items
+            items = []
+            for row in results:
+                # Skip if no part (empty set)
+                if row.part_id is None:
+                    continue
+                
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(id=row.part_id, name=row.part_name, colour=colour, shape=shape)
+                
+                set_item = DomainSetItem(part=part, quantity=row.quantity)
+                items.append(set_item)
+            
+            first_row = results[0]
+            return DomainSet(
+                id=first_row.set_id,
+                name=first_row.set_name,
+                parts=items
+            )
+
+    def get_set_by_name(self, name: str) -> DomainSet | None:
         with self.session as session:
-            statement = select(Set).where(Set.name == name)
-            db_set = session.exec(statement).first()
-            if not db_set:
+            statement = (
+                select(
+                    Set.id.label("set_id"),
+                    Set.name.label("set_name"),
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    SetPartLink.quantity.label("quantity")
+                )
+                .outerjoin(SetPartLink, Set.id == SetPartLink.set_id)
+                .outerjoin(Part, SetPartLink.part_id == Part.id)
+                .outerjoin(Colour, Part.colour_id == Colour.id)
+                .outerjoin(Shape, Part.shape_id == Shape.id)
+                .where(Set.name == name)
+            )
+            
+            results = session.exec(statement).all()
+            
+            if not results:
                 return None
-            parts = {}
-            for link in db_set.parts:
-                quantity = self.get_part_quantity_in_set(db_set.id, link.id)
-                parts[link.id] = quantity
-            set_entity = DomainSet(id=db_set.id, name=db_set.name, required_parts=parts)
-            return set_entity
+            
+            # Build set items
+            items = []
+            for row in results:
+                # Skip if no part (empty set)
+                if row.part_id is None:
+                    continue
+                
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(id=row.part_id, name=row.part_name, colour=colour, shape=shape)
+                
+                set_item = DomainSetItem(part=part, quantity=row.quantity)
+                items.append(set_item)
+            
+            first_row = results[0]
+            return DomainSet(
+                id=first_row.set_id,
+                name=first_row.set_name,
+                parts=items
+            )
+
+    def get_parts_by_set_id(self, set_id: int) -> list[DomainSetItem]:
+        with self.session as session:
+            statement = (
+                select(
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    SetPartLink.quantity.label("quantity")
+                )
+                .join(SetPartLink, Part.id == SetPartLink.part_id)
+                .join(Colour, Part.colour_id == Colour.id)
+                .join(Shape, Part.shape_id == Shape.id)
+                .where(SetPartLink.set_id == set_id)
+            )
+            
+            results = session.exec(statement).all()
+            
+            items = []
+            for row in results:
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(id=row.part_id, name=row.part_name, colour=colour, shape=shape)
+                
+                set_item = DomainSetItem(part=part, quantity=row.quantity)
+                items.append(set_item)
+            
+            return items
 
     def create_inventory(self, inventory: DomainInventory) -> DomainInventory:
-        with self.session as session:    
+        with self.session as session:
             db_inventory = Inventory()
             session.add(db_inventory)
             session.flush()
-
-            for part_id, qty in inventory.parts.items():
-                db_part = session.get(Part, part_id)
-                if not db_part:
-                    raise ValueError(f"Part with id {part_id} does not exist.")
-                    
-                else:
-                    link = InventoryPartLink(inventory_id=db_inventory.id, part_id=part_id, quantity=qty)
-                    session.add(link)
-            
-            session.commit()
             session.refresh(db_inventory)
-            parts = {}
-            for link in db_inventory.parts:
-                quantity = self.get_part_quantity_in_inventory(db_inventory.id, link.id)
-                parts[link.id] = quantity
 
-            inventory = DomainInventory(id=db_inventory.id, parts=parts)
-            return inventory
-        
-    def get_inventory_by_id(self, inventory_id: int) -> DomainInventory:
-        with self.session as session:
-            db_inventory = session.get(Inventory, inventory_id)
-            if not db_inventory:
-                return None
-            parts = {}
-            for link in db_inventory.parts:
-                quantity = self.get_part_quantity_in_inventory(db_inventory.id, link.id)
-                parts[link.id] = quantity
-            inventory = DomainInventory(id=db_inventory.id, parts=parts)
-            return inventory
-    
-    def get_parts_by_inventory_id(self, inventory_id: int) -> dict[int, int]:
-        with self.session as session:
-            inventory_obj = session.get(Inventory, inventory_id)
-            if not inventory_obj:
-                return {}
-            parts_dict = {}
-            for link in inventory_obj.parts:
-                quantity = self.get_part_quantity_in_inventory(inventory_obj.id, link.id)
-                parts_dict[link.id] = quantity
-            return parts_dict
+            # Create InventoryPartLink entries for each part
+            valid_items = []
+            for item in inventory.parts:
+                # Check if part exists
+                db_part = session.get(Part, item.part.id)
+                if db_part is None:
+                    raise ValueError(f"Part with id {item.part.id} does not exist")
 
-    def get_user_by_id(self, user_id: int) -> DomainUser:
+                inventory_part_link = InventoryPartLink(
+                    inventory_id=db_inventory.id,
+                    part_id=item.part.id,
+                    quantity=item.quantity,
+                )
+                session.add(inventory_part_link)
+                valid_items.append(item)
+
+            session.commit()
+
+            # Return DomainInventory with the new structure
+            return DomainInventory(id=db_inventory.id, parts=valid_items)
+
+    def get_inventory_by_id(self, inventory_id: int) -> DomainInventory | None:
         with self.session as session:
-            db_user = session.get(User, user_id)
-            if not db_user:
+            statement = (
+                select(
+                    Inventory.id.label("inventory_id"),
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    InventoryPartLink.quantity.label("quantity"),
+                )
+                .join(InventoryPartLink, Inventory.id == InventoryPartLink.inventory_id)
+                .join(Part, InventoryPartLink.part_id == Part.id)
+                .join(Colour, Part.colour_id == Colour.id)
+                .join(Shape, Part.shape_id == Shape.id)
+                .where(Inventory.id == inventory_id)
+            )
+
+            results = session.exec(statement).all()
+
+            if not results:
+                # Check if inventory exists but has no parts
+                db_inventory = session.get(Inventory, inventory_id)
+                if db_inventory:
+                    return DomainInventory(id=db_inventory.id, parts=[])
                 return None
-            inventory = self.get_inventory_by_id(db_user.inventory_id)
-            return DomainUser(id=db_user.id, name=db_user.name, inventory=inventory)
-        
-    def get_user_by_name(self, name: str) -> DomainUser:
+
+            items = []
+            for row in results:
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(
+                    id=row.part_id, name=row.part_name, colour=colour, shape=shape
+                )
+
+                inventory_item = DomainInventoryItem(part=part, quantity=row.quantity)
+                items.append(inventory_item)
+
+            return DomainInventory(id=results[0].inventory_id, parts=items)
+
+    def get_user_by_id(self, user_id: int) -> DomainUser | None:
         with self.session as session:
-            statement = select(User).where(User.name == name)
-            db_user = session.exec(statement).first()
-            if not db_user:
+            statement = (
+                select(
+                    User.id.label("user_id"),
+                    User.name.label("user_name"),
+                    Inventory.id.label("inventory_id"),
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    InventoryPartLink.quantity.label("quantity"),
+                )
+                .join(Inventory, User.inventory_id == Inventory.id)
+                .outerjoin(
+                    InventoryPartLink, Inventory.id == InventoryPartLink.inventory_id
+                )
+                .outerjoin(Part, InventoryPartLink.part_id == Part.id)
+                .outerjoin(Colour, Part.colour_id == Colour.id)
+                .outerjoin(Shape, Part.shape_id == Shape.id)
+                .where(User.id == user_id)
+            )
+
+            results = session.exec(statement).all()
+
+            if not results:
                 return None
-            inventory = self.get_inventory_by_id(db_user.inventory_id)
-            return DomainUser(id=db_user.id, name=db_user.name, inventory=inventory)
+
+            # Build inventory items
+            items = []
+            for row in results:
+                # Skip if no part (empty inventory)
+                if row.part_id is None:
+                    continue
+
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(
+                    id=row.part_id, name=row.part_name, colour=colour, shape=shape
+                )
+
+                inventory_item = DomainInventoryItem(part=part, quantity=row.quantity)
+                items.append(inventory_item)
+
+            first_row = results[0]
+            inventory = DomainInventory(id=first_row.inventory_id, parts=items)
+
+            return DomainUser(
+                id=first_row.user_id, name=first_row.user_name, inventory=inventory
+            )
+
+    def get_user_by_name(self, name: str) -> DomainUser | None:
+        with self.session as session:
+            statement = (
+                select(
+                    User.id.label("user_id"),
+                    User.name.label("user_name"),
+                    Inventory.id.label("inventory_id"),
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    InventoryPartLink.quantity.label("quantity"),
+                )
+                .join(Inventory, User.inventory_id == Inventory.id)
+                .outerjoin(
+                    InventoryPartLink, Inventory.id == InventoryPartLink.inventory_id
+                )
+                .outerjoin(Part, InventoryPartLink.part_id == Part.id)
+                .outerjoin(Colour, Part.colour_id == Colour.id)
+                .outerjoin(Shape, Part.shape_id == Shape.id)
+                .where(User.name == name)
+            )
+
+            results = session.exec(statement).all()
+
+            if not results:
+                return None
+
+            # Build inventory items
+            items = []
+            for row in results:
+                # Skip if no part (empty inventory)
+                if row.part_id is None:
+                    continue
+
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(
+                    id=row.part_id, name=row.part_name, colour=colour, shape=shape
+                )
+
+                inventory_item = DomainInventoryItem(part=part, quantity=row.quantity)
+                items.append(inventory_item)
+
+            first_row = results[0]
+            inventory = DomainInventory(id=first_row.inventory_id, parts=items)
+
+            return DomainUser(
+                id=first_row.user_id, name=first_row.user_name, inventory=inventory
+            )
 
     def create_user(self, user: DomainUser) -> DomainUser:
-        with self.session as session:           
-            entity_inventory = self.create_inventory(user.inventory)
-            user = User(name=user.name, inventory_id=entity_inventory.id)
-            session.add(user)
+        with self.session as session:
+            # Create inventory first
+            db_inventory = Inventory()
+            session.add(db_inventory)
             session.commit()
-            session.refresh(user)
+            session.refresh(db_inventory)
 
-            return self.get_user_by_id(user.id)    
+            # Create InventoryPartLink entries for each part
+            valid_items = []
+            for item in user.inventory.parts:
+                # Check if part exists
+                db_part = session.get(Part, item.part.id)
+                if db_part is None:
+                    raise ValueError(f"Part with id {item.part.id} does not exist")
+
+                inventory_part_link = InventoryPartLink(
+                    inventory_id=db_inventory.id,
+                    part_id=item.part.id,
+                    quantity=item.quantity,
+                )
+                session.add(inventory_part_link)
+                valid_items.append(item)
+
+            session.commit()
+
+            # Create user with inventory
+            db_user = User(name=user.name, inventory_id=db_inventory.id)
+            session.add(db_user)
+            session.commit()
+            session.refresh(db_user)
+
+            # Return DomainUser with full inventory
+            inventory = DomainInventory(id=db_inventory.id, parts=valid_items)
+
+            return DomainUser(id=db_user.id, name=db_user.name, inventory=inventory)
 
     def get_all_users(self, offset: int = 0, limit: int = 100) -> list[User]:
         with self.session as session:
-            users = []
-            db_users = session.exec(select(User).offset(offset).limit(limit)).all()
-            for db_user in db_users:
-                inventory = self.get_inventory_by_id(db_user.inventory_id)
-                user = DomainUser(id=db_user.id, name=db_user.name, inventory=inventory)
-                users.append(user)
-            return users
-        
-    def get_inventory_of_user(self, user_id: int) -> DomainInventory:
-        with self.session as session:
-            user = session.get(User, user_id)
-            if not user:
-                return None
-            inventory = session.get(Inventory, user.inventory_id)
-            return inventory
+            statement = (
+                select(
+                    User.id.label("user_id"),
+                    User.name.label("user_name"),
+                    Inventory.id.label("inventory_id"),
+                    Part.id.label("part_id"),
+                    Part.name.label("part_name"),
+                    Colour.id.label("colour_id"),
+                    Colour.name.label("colour_name"),
+                    Shape.id.label("shape_id"),
+                    Shape.name.label("shape_name"),
+                    InventoryPartLink.quantity.label("quantity"),
+                )
+                .join(Inventory, User.inventory_id == Inventory.id)
+                .join(InventoryPartLink, Inventory.id == InventoryPartLink.inventory_id)
+                .join(Part, InventoryPartLink.part_id == Part.id)
+                .join(Colour, Part.colour_id == Colour.id)
+                .join(Shape, Part.shape_id == Shape.id)
+                .offset(offset)
+                .limit(limit)
+            )
+
+            results = session.exec(statement).all()
+
+            users_dict: dict[int, dict] = {}
+            for row in results:
+                user_id = row.user_id
+
+                if user_id not in users_dict:
+                    users_dict[user_id] = {
+                        "user_id": row.user_id,
+                        "user_name": row.user_name,
+                        "inventory_id": row.inventory_id,
+                        "items": [],
+                    }
+
+                colour = DomainColour(id=row.colour_id, name=row.colour_name)
+                shape = DomainShape(id=row.shape_id, name=row.shape_name)
+                part = DomainPart(
+                    id=row.part_id, name=row.part_name, colour=colour, shape=shape
+                )
+
+                inventory_item = DomainInventoryItem(part=part, quantity=row.quantity)
+                users_dict[user_id]["items"].append(inventory_item)
+
+            domain_users = []
+            for user_data in users_dict.values():
+                inventory = DomainInventory(
+                    id=user_data["inventory_id"], parts=user_data["items"]
+                )
+
+                user = DomainUser(
+                    id=user_data["user_id"],
+                    name=user_data["user_name"],
+                    inventory=inventory,
+                )
+
+                domain_users.append(user)
+
+            return domain_users
+
