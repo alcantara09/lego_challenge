@@ -1,33 +1,23 @@
-import pytest
+from sqlmodel import SQLModel, Session, create_engine
 
-from src.domain.entities.user import User
 from src.domain.entities.colour import Colour
 from src.domain.entities.shape import Shape
-from src.domain.entities.part import Part 
-from src.domain.entities.set import Set  
+from src.domain.entities.part import Part
+from src.domain.entities.set import Set
 from src.domain.entities.inventory import Inventory
+from src.domain.entities.user import User
 
-from src.ports.repositories.bricks_repository import BricksRepository
-from sqlmodel import SQLModel, Session, create_engine
 from src.ports.repositories.sql_brick_repository import SQLBrickRepository
 
-from src.domain.use_cases.analyse_buildability import AnalyseBuildability
+sqlite_url = "sqlite:///:database.db:"
+engine = create_engine(sqlite_url, echo=False)
+SQLModel.metadata.create_all(engine)
 
-@pytest.fixture(scope="function")
-def in_memory_session() -> Session:
-    sqlite_url = "sqlite:///:memory:"
-    engine = create_engine(sqlite_url, echo=False)
-    SQLModel.metadata.create_all(engine)
-    with Session(engine, expire_on_commit=False) as session:
-        yield session
 
-@pytest.fixture(scope="function")
-def brick_repository(in_memory_session) -> BricksRepository:
-    yield SQLBrickRepository(in_memory_session)
+with Session(engine) as session:
+    brick_repository = SQLBrickRepository(session)
+    # Initialise basic data
 
-@pytest.fixture(scope="function")
-def brick_repository_with_data(brick_repository: BricksRepository) -> BricksRepository:
-    # Pre-populate the repository with some data if needed
     red_colour = Colour(name="Red")
     blue_colour = Colour(name="Blue")
     yellow_colour = Colour(name="Yellow")
@@ -109,21 +99,3 @@ def brick_repository_with_data(brick_repository: BricksRepository) -> BricksRepo
     brick_repository.create_user(user_2)
     brick_repository.create_user(user_3)
     brick_repository.create_user(user_4)
-
-    yield brick_repository
-
-@pytest.fixture
-def analyse_buildability_use_case(brick_repository_with_data: BricksRepository) -> AnalyseBuildability:
-    return AnalyseBuildability(brick_repository_with_data)
-
-@pytest.fixture
-def missing_parts(brick_repository_with_data: BricksRepository) -> Inventory:
-    basic_parts = brick_repository_with_data.get_all_parts()
-    
-    return Inventory(parts={
-        basic_parts[0].id: 1,
-        basic_parts[1].id: 2,
-        basic_parts[2].id: 1,
-        basic_parts[3].id: 6,
-        basic_parts[4].id: 4
-    })

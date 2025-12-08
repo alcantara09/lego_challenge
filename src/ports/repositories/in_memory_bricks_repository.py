@@ -17,9 +17,12 @@ class InMemoryBricksRepository(BricksRepository):
         set = next((s for s in self.sets if s.id == set_id), None)
         return set.required_parts if set else parts
     
-    def get_all_users(self) -> list[User]:
-        return self.users
+    def get_set_by_id(self, set_id: int) -> Set:
+        return next((s for s in self.sets if s.id == set_id), None)
     
+    def get_set_by_name(self, name: str) -> Set:
+        return next((s for s in self.sets if s.name == name), None)
+        
     def get_inventory_of_user(self, user_id: int) -> Inventory:
         user = next((u for u in self.users if u.id == user_id), None)
         return user.inventory if user else None
@@ -30,6 +33,15 @@ class InMemoryBricksRepository(BricksRepository):
     def create_user(self, user: User) -> User:
         self.users.append(user)
         return user
+    
+    def get_user_by_id(self, user_id: int) -> User:
+        return next((u for u in self.users if u.id == user_id), None)
+
+    def get_user_by_name(self, name: str) -> User:
+        return next((u for u in self.users if u.name == name), None)
+    
+    def get_all_users(self) -> list[User]:
+        return self.users
     
     def get_all_colours(self) -> list[Colour]:
         pass

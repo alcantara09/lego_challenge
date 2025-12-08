@@ -11,9 +11,6 @@ from src.domain.entities.set import Set as DomainSet
 from src.domain.entities.colour import Colour as DomainColour
 from src.domain.entities.shape import Shape as DomainShape
 
-
-
-
 class SQLBrickRepository(BricksRepository):
     def __init__(self, session: Session):
         self.session = session
@@ -149,6 +146,31 @@ class SQLBrickRepository(BricksRepository):
                 quantity = self.get_part_quantity_in_set(set_obj.id, link.id)
                 parts_dict[link.id] = quantity
             return parts_dict
+        
+    def get_set_by_id(self, set_id: int) -> DomainSet:
+        with self.session as session:
+            db_set = session.get(Set, set_id)
+            if not db_set:
+                return None
+            parts = {}
+            for link in db_set.parts:
+                quantity = self.get_part_quantity_in_set(db_set.id, link.id)
+                parts[link.id] = quantity
+            set_entity = DomainSet(id=db_set.id, name=db_set.name, required_parts=parts)
+            return set_entity
+        
+    def get_set_by_name(self, name: str) -> DomainSet:
+        with self.session as session:
+            statement = select(Set).where(Set.name == name)
+            db_set = session.exec(statement).first()
+            if not db_set:
+                return None
+            parts = {}
+            for link in db_set.parts:
+                quantity = self.get_part_quantity_in_set(db_set.id, link.id)
+                parts[link.id] = quantity
+            set_entity = DomainSet(id=db_set.id, name=db_set.name, required_parts=parts)
+            return set_entity
 
     def create_inventory(self, inventory: DomainInventory) -> DomainInventory:
         with self.session as session:    
@@ -201,6 +223,15 @@ class SQLBrickRepository(BricksRepository):
     def get_user_by_id(self, user_id: int) -> DomainUser:
         with self.session as session:
             db_user = session.get(User, user_id)
+            if not db_user:
+                return None
+            inventory = self.get_inventory_by_id(db_user.inventory_id)
+            return DomainUser(id=db_user.id, name=db_user.name, inventory=inventory)
+        
+    def get_user_by_name(self, name: str) -> DomainUser:
+        with self.session as session:
+            statement = select(User).where(User.name == name)
+            db_user = session.exec(statement).first()
             if not db_user:
                 return None
             inventory = self.get_inventory_by_id(db_user.inventory_id)

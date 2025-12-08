@@ -14,9 +14,13 @@ class BricksRepository(ABC):
     @abstractmethod
     def get_parts_by_set_id(self, set_id: int) -> dict[int, int]:
         pass
-    
+
     @abstractmethod
-    def get_all_users(self) -> list[User]:
+    def get_set_by_id(self, set_id: int) -> Set:
+        pass
+
+    @abstractmethod
+    def get_set_by_name(self, name: str) -> Set:
         pass
     
     @abstractmethod
@@ -29,6 +33,18 @@ class BricksRepository(ABC):
 
     @abstractmethod
     def create_user(self, user: User) -> User:
+        pass
+
+    @abstractmethod
+    def get_user_by_id(self, user_id: int) -> User:
+        pass
+    
+    @abstractmethod
+    def get_user_by_name(self, name: str) -> User:
+        pass
+    
+    @abstractmethod
+    def get_all_users(self) -> list[User]:
         pass
 
     @abstractmethod
