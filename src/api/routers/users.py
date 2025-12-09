@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
@@ -8,6 +9,8 @@ from src.api.dependencies import get_analyse_buildability_use_case, get_brick_re
 from src.domain.use_cases.analyse_buildability import AnalyseBuildability
 from src.api.routers.models import UserModel, set_to_model, user_to_model, part_to_model
 from src.api.routers.response_models import ErrorResponse, PartUsageResponse, PossibleSetsResponse, SuggestedUsersResponse, UserByNameData, UserByNameResponse, UserSummary, UsersListResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api",
@@ -57,6 +60,7 @@ async def read_user(
     repository: RepoDep,
     user_id: int = Path(..., gt=0, description="User unique identifier")
 ):
+    logger.info(f"Fetching user with ID: {user_id}")    
     user = repository.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(
@@ -80,6 +84,8 @@ async def read_user_possible_sets(
     analyse_buildability_use_case: UseCaseDep,
     user_id: int = Path(..., gt=0, description="User unique identifier")
 ):
+    logger.info(f"Fetching possible sets for user: {user_id}")
+    
     sets = analyse_buildability_use_case.get_possible_sets_for_user_inventory(user_id)
     if not sets:
         return PossibleSetsResponse(data=[])
@@ -101,6 +107,8 @@ async def read_user_suggest_users_for_set(
     user_id: int = Path(..., gt=0, description="Current user's unique identifier"),
     set_id: int = Path(..., gt=0, description="Target set unique identifier")
 ):
+    logger.info(f"Suggesting users for sharing: user={user_id}, set={set_id}")    
+
     user = analyse_buildability_use_case.bricks_repository.get_user_by_id(user_id)
     if user is None:
         raise HTTPException(
@@ -140,6 +148,8 @@ async def get_user_by_name(
     repository: RepoDep,
     name: str = Path(..., min_length=1, max_length=100, description="User display name")
 ):
+    logger.info(f"Fetching user with name: {name}")
+
     user = repository.get_user_by_name(name)
     if user is None:
         raise HTTPException(

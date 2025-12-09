@@ -1,4 +1,5 @@
 
+import logging
 from typing import Annotated
 from sqlmodel import Session
 from fastapi import APIRouter, Depends, HTTPException, Path, status
@@ -6,6 +7,8 @@ from src.api.routers.response_models import ErrorResponse, SetByNameData, SetByN
 from src.ports.repositories.bricks_repository import BricksRepository
 from src.api.dependencies import get_brick_repository, get_session
 from src.api.routers.models import SetModel, set_to_model
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api",
@@ -51,6 +54,8 @@ async def get_set_by_id(
     bricks_repository: RepoDep,
     set_id: int = Path(..., gt=0, description="Set unique identifier")
 ):
+    logger.info(f"Fetching set with ID: {set_id}")
+    
     lego_set = bricks_repository.get_set_by_id(set_id)
     if lego_set is None:
         raise HTTPException(
@@ -75,6 +80,8 @@ async def get_set_by_name(
     bricks_repository: RepoDep,
     name: str = Path(..., min_length=1, max_length=100, description="Set display name")
 ):
+    logger.info(f"Fetching set with name: {name}")
+    
     lego_set = bricks_repository.get_set_by_name(name)
     if lego_set is None:
         raise HTTPException(
