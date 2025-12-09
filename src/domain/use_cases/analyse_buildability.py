@@ -28,7 +28,6 @@ class AnalyseBuildability:
             required_parts = {(item.part.id, item.part.material_id): item.quantity for item in target_set.parts}
             
             if all(inventory_parts.get(part_id, 0) >= qty for part_id, qty in required_parts.items()):
-                print("User can build set:", target_set.id)
                 possible_sets.append(target_set)
         
         return possible_sets
@@ -66,7 +65,6 @@ class AnalyseBuildability:
         for user in users:
             user_parts = {(item.part.id, item.part.material_id): item.quantity for item in user.inventory.parts}
             number_of_parts = user_parts.get(part_id, 0)
-            print(f"User {user.id} has {number_of_parts} of part {part_id}")
             if number_of_parts > 0:
                 users_with_parts[user.id] = number_of_parts
         return dict(sorted(users_with_parts.items(), key=lambda x: x[1], reverse=True))
@@ -98,11 +96,8 @@ class AnalyseBuildability:
 
         for part in all_parts:
             users_with_part = self.get_other_users_with_part(all_users, (part.id, part.material_id))
-            print(f"Part {part.id} is used by {len(users_with_part)} users")
             total_users = len(all_users)
-            print(f"Total users: {total_users}")
-            print(f"Usage percentage: {len(users_with_part) / total_users}")
-            if len(users_with_part) / len(all_users) >= percentage:
+            if len(users_with_part) / total_users >= percentage:
                 number_of_parts = min(users_with_part.values()) if users_with_part else 0
                 parts_with_usage_above_percentage.append((part, number_of_parts))
         

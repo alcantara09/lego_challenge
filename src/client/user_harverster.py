@@ -31,7 +31,7 @@ class UserHarverster:
             id=user_data.get("id")
         )
 
-        # print(f"Harversted user '{user_data.get("username")}'")
+        print(f"Harversted user '{user_data.get("username")}'")
         return user_entity        
 
     def harverst_all_users(self) -> list[User]:

@@ -35,7 +35,7 @@ class SetHarverster:
         set_summary = self.harverst_set_by_name(set_data.get("name"))
         total_pieces = set_summary.get("totalPieces")
 
-        #print(f"Harversted set '{set_data.get('name')}' with {total_pieces} pieces.")
+        print(f"Harversted set '{set_data.get('name')}' with {total_pieces} pieces.")
         set_entity = Set(
             name=set_data.get("name"),
             totalPieces=total_pieces,
@@ -43,7 +43,6 @@ class SetHarverster:
             id=set_data.get("id")
         )
         if set_entity.id is None:
-            #print("Set ID is None for set:", set_data)
             raise Exception("Set must have an ID after harvesting.")
         return set_entity
     
@@ -58,9 +57,3 @@ class SetHarverster:
             set_entities.append(self.haverst_set(uuid.UUID(set_data.get("id"))) )
         return set_entities
     
-if __name__ == "__main__":
-    harverster = SetHarverster()
-    #print(harverster.harverst_set_by_name("winter-wonderland"))
-    #set_entity = harverster.haverst_set(uuid.UUID("720b8896-7d55-4a2f-9554-dc143203017b"))
-    #print(set_entity)
-    all_sets = harverster.harverst_all_sets()

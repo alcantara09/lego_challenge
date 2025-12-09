@@ -1,271 +1,108 @@
+from sqlmodel import SQLModel, create_engine, Session
 import typer
 import requests
-from typing import Optional
+
 from rich.console import Console
 from rich.table import Table
-from rich import print_json
-import json
 
-app = typer.Typer(help="CLI tool to interact with REST APIs")
+from src.client.set_harverster import SetHarverster
+from src.client.user_harverster import UserHarverster
+from src.domain.use_cases.extract_db_from_api import ExtractDbFromApi
+from src.ports.repositories.bricks_repository import BricksRepository
+from src.ports.repositories.sql_brick_repository import SQLBrickRepository
+from src.tests.unit.analyse_buildability_test import AnalyseBuildability
+
+app = typer.Typer(help="CLI tool to visualize buildability analysis from LEGO set.")
 console = Console()
 
-url_base = "http://127.0.0.1:8000"
+def get_repository() -> BricksRepository:
+    sqlite_url = "sqlite:///:database.db:"
+    engine = create_engine(sqlite_url, echo=False)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine, expire_on_commit=False) as session:
+        yield SQLBrickRepository(session)
 
 @app.command()
-def get_users():
+def extract_db():
     """
-    List all users from the API.
+    Extract the database from the API.
     """
     try:
-        response = requests.get(f"{url_base}/api/users/")
-        response.raise_for_status()
-        response_data = response.json()
-        
+        set_harverster = SetHarverster()
+        user_harverster = UserHarverster()
+
+        migrator = ExtractDbFromApi(set_harvester=set_harverster, user_harvester=user_harverster, bricks_repository=next(get_repository()))
+
+        migrator.migrate_from_api()
+    except requests.exceptions.RequestException as e:
+        console.print(f"[red]Error initiating database migration: {e}[/red]")
+        raise typer.Exit(1)
+
+@app.command()
+def get_possible_sets():
+    """
+    Get all possible Sets for brickfan35.
+    """
+    try:
+
+        analyse_buildability_use_case = AnalyseBuildability(next(get_repository()))
+        bricks_repository = next(get_repository())
+        user = bricks_repository.get_user_by_name("brickfan35")
+        possible_sets = analyse_buildability_use_case.get_possible_sets_for_user_inventory(user.id)
+
         table = Table(show_header=True, header_style="bold magenta")
-        table.title = response_data["message"]
-        table.add_column("ID", style="dim")
-        table.add_column("Name")        
-        for user in response_data["data"]:
-            table.add_row(str(user["id"]), user["name"])        
+        table.title = "Possible Sets for brickfan35"
+        table.add_column("Name")  
+        table.add_column("Total Parts", justify="right")      
+        for lego_set in possible_sets:
+            table.add_row(lego_set.name, str(lego_set.totalPieces))            
         console.print(table)
-        
+
     except requests.exceptions.RequestException as e:
         console.print(f"[red]Error fetching users: {e}[/red]")
         raise typer.Exit(1)
 
 @app.command()
-def get_user_by_id(id: int):
+def suggest_users():
     """
-    Get a user by ID from the API.
+    Suggest users for part sharing to build tropical-island for landscape-artist.
     """
     try:
-        response = requests.get(f"{url_base}/api/user/by-id/{id}")
-        response.raise_for_status()
-        user = response.json()
-        
-        # User info table
+        analyse_buildability_use_case = AnalyseBuildability(next(get_repository()))
+        brick_repository = next(get_repository())
+        user = brick_repository.get_user_by_name("landscape-artist")
+        users = analyse_buildability_use_case.suggest_users_for_part_sharing(user,"tropical-island")
         table = Table(show_header=True, header_style="bold magenta")
-        table.title = "User Information"
-        table.add_column("ID", style="dim")
-        table.add_column("Name")
-        table.add_column("Inventory ID")
-        table.add_row(
-            str(user["id"]), 
-            user["name"],
-            str(user["inventory"]["id"])
-        )
-        console.print(table)
-
-        # Inventory table
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Inventory"
-        table.add_column("Part ID", style="dim")
-        table.add_column("Part Name")
-        table.add_column("Colour")
-        table.add_column("Shape")
-        table.add_column("Quantity", justify="right")
-        
-        for item in user["inventory"]["parts"]:
-            part = item["part"]
-            table.add_row(
-                str(part["id"]),
-                part["name"],
-                part["colour"]["name"],
-                part["shape"]["name"],
-                str(item["quantity"])
-            )
+        table.title = "Users Suggested for Part Sharing"
+        table.add_column("Name")  
+        table.add_column("Total Parts", justify="right")     
+        for suggested_user, common_parts in users:
+            table.add_row(suggested_user.name, str(common_parts))
         console.print(table)
         
     except requests.exceptions.RequestException as e:
         console.print(f"[red]Error fetching user: {e}[/red]")
         raise typer.Exit(1)
-    
+ 
 @app.command()
-def get_user_by_name(name: str):
+def get_part_usage():
     """
-    Get a user by name from the API.
+    Get parts that more than 50% of users have.
     """
-    try:
-        response = requests.get(f"{url_base}/api/user/by-name/{name}")
-        response.raise_for_status()
-        response_data = response.json()
-        user = response_data["data"][0]
-        
-        # User info table
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = "User Information"
-        table.add_column("ID", style="dim")
-        table.add_column("Name")
-        table.add_row(str(user["id"]), user["name"])
-        console.print(table)
-        
-        # Parts table
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Inventory"
-        table.add_column("Part Name")
-        table.add_column("Quantity", justify="right")
-        
-        for part_name, quantity in user["parts"].items():
-            table.add_row(part_name, str(quantity))
-        console.print(table)
-        
-    except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error fetching user: {e}[/red]")
-        raise typer.Exit(1)
-
-@app.command()
-def get_sets():
-    """
-    List all sets from the API.
-    """
-    try:
-        response = requests.get(f"{url_base}/api/sets/")
-        response.raise_for_status()
-        response_data = response.json()
-        
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = response_data["message"]
-        table.add_column("ID", style="dim")
-        table.add_column("Name")        
-        for set_ in response_data["data"]:
-            table.add_row(str(set_["id"]), set_["name"])        
-        console.print(table)
-        
-    except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error fetching sets: {e}[/red]")
-        raise typer.Exit(1)
-    
-@app.command()
-def get_set_by_name(name: str):
-    """
-    Get a set by name from the API.
-    """
-    try:
-        response = requests.get(f"{url_base}/api/set/by-name/{name}")
-        response.raise_for_status()
-        response_data = response.json()
-        brick_set = response_data["data"]
-        
-        # Set info table
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Set Information"
-        table.add_column("ID", style="dim")
-        table.add_column("Name")
-        table.add_column("Number of Parts")
-        table.add_row(
-            str(brick_set["id"]), 
-            brick_set["name"], 
-            str(len(brick_set["parts"]))
-        )
-        console.print(table)
-        
-        # Parts table
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Required Parts"
-        table.add_column("Part Name")
-        table.add_column("Quantity", justify="right")
-        
-        for part_name, quantity in brick_set["parts"].items():
-            table.add_row(part_name, str(quantity))
-        console.print(table)
-        
-    except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error fetching set: {e}[/red]")
-        raise typer.Exit(1)
-
-@app.command()
-def get_set_by_id(id: int):
-    """
-    Get a set by ID from the API.
-    """
-    try:
-        response = requests.get(f"{url_base}/api/set/by-id/{id}")
-        response.raise_for_status()
-        brick_set = response.json()
-        
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Set Information"
-        table.add_column("ID", style="dim")
-        table.add_column("Name")
-        table.add_column("Number of Parts")
-        table.add_row(
-            str(brick_set["id"]), 
-            brick_set["name"], 
-            str(len(brick_set["parts"]))
-        )
-        console.print(table)
+    try: 
+        analyse_buildability_use_case = AnalyseBuildability(next(get_repository()))
+        parts_most_used = analyse_buildability_use_case.get_parts_with_percentage_of_usage(percentage=0.5)
 
         table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Required Parts"
-        table.add_column("Part ID", style="dim")
+        table.title = f"Parts with Usage Above 50% user ownership"
         table.add_column("Part Name")
-        table.add_column("Colour")
-        table.add_column("Shape")
-        table.add_column("Quantity", justify="right")
-        
-        for item in brick_set["parts"]:
-            part = item["part"]
-            table.add_row(
-                str(part["id"]),
-                part["name"],
-                part["colour"]["name"],
-                part["shape"]["name"],
-                str(item["quantity"])
-            )
-        console.print(table)
-        
-    except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error fetching set: {e}[/red]")
-        raise typer.Exit(1)
-    
-@app.command()
-def get_colours():
-    """
-    List all colours from the API.
-    """
-    try:
-        response = requests.get(f"{url_base}/api/colours/")
-        response.raise_for_status()
-        response_data = response.json()
-        
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = response_data["message"]
-        table.add_column("ID", style="dim")
-        table.add_column("Name")        
-        for colour in response_data["data"]:
-            table.add_row(str(colour["id"]), colour["name"])        
-        console.print(table)
-        
-    except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error fetching colours: {e}[/red]")
-        raise typer.Exit(1)
-
-@app.command()
-def get_part_usage(percentage: float = 0.5):
-    """
-    Get parts with usage above a certain percentage from the API.
-    """
-    try:
-        response = requests.get(f"{url_base}/api/users/part-usage/")
-        response.raise_for_status()
-        parts_usage = response.json()["data"]
-        
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = f"Parts with Usage Above {percentage*100}%"
-        table.add_column("Part ID", style="dim")
-        table.add_column("Part Name")
-        table.add_column("Colour")
-        table.add_column("Shape")
-        table.add_column("Number of Parts", justify="right")
-        
-        # data format: [[{part}, quantity], ...]
-        for item in parts_usage:
+        table.add_column("Material ID")
+        table.add_column("Min # of parts", justify="right")
+        for item in parts_most_used:
             part, quantity = item
             table.add_row(
-                str(part["id"]),
-                part["name"],
-                part["colour"]["name"],
-                part["shape"]["name"],
+                str(part.id),
+                str(part.material_id),
                 str(quantity)
             )
         console.print(table)
@@ -273,115 +110,6 @@ def get_part_usage(percentage: float = 0.5):
     except requests.exceptions.RequestException as e:
         console.print(f"[red]Error fetching part usage: {e}[/red]")
         raise typer.Exit(1)
-
-@app.command()
-def suggest_users(user_id: int, set_id: int):
-    """
-    Suggest users for part sharing based on a user's missing parts for a set.
-    """
-    try:
-        response = requests.get(f"{url_base}/api/user/by-id/{user_id}/set/{set_id}/suggest-users")
-        response.raise_for_status()
-        suggested_users = response.json()["data"]
-        
-        # data format: [[{user}, shared_parts_count], ...]
-        table = Table(show_header=True, header_style="bold magenta")
-        table.title = f"Suggested Users for User ID {user_id} and Set ID {set_id}"
-        table.add_column("User ID", style="dim")
-        table.add_column("User Name")
-        table.add_column("Inventory ID")
-        table.add_column("Shared Parts Count", justify="right")
-        
-        for item in suggested_users:
-            user, shared_parts_count = item
-            table.add_row(
-                str(user["id"]),
-                user["name"],
-                str(user["inventory"]["id"]),
-                str(shared_parts_count)
-            )
-        console.print(table)
-        
-        # Optional: show detailed inventory for each suggested user
-        for item in suggested_users:
-            user, shared_parts_count = item
-            
-            table = Table(show_header=True, header_style="bold cyan")
-            table.title = f"{user['name']}'s Inventory"
-            table.add_column("Part ID", style="dim")
-            table.add_column("Part Name")
-            table.add_column("Colour")
-            table.add_column("Shape")
-            table.add_column("Quantity", justify="right")
-            
-            for part_item in user["inventory"]["parts"]:
-                part = part_item["part"]
-                table.add_row(
-                    str(part["id"]),
-                    part["name"],
-                    part["colour"]["name"],
-                    part["shape"]["name"],
-                    str(part_item["quantity"])
-                )
-            console.print(table)
-        
-    except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error fetching suggested users: {e}[/red]")
-        raise typer.Exit(1)
-
-@app.command()
-def get_possible_sets(user_id: int):
-    """
-    Get possible sets a user can build from the API.
-    """
-    try:
-        response = requests.get(f"{url_base}/api/user/by-id/{user_id}/possible-sets")
-        response.raise_for_status()
-        response_data = response.json()
-        
-        if not response_data["data"]:
-            console.print(f"[yellow]No sets can be built by user {user_id}[/yellow]")
-            return
-        
-        for lego_set in response_data["data"]:
-            # Set info table
-            set_table = Table(show_header=True, header_style="bold magenta")
-            set_table.title = f"Set: {lego_set['name']}"
-            set_table.add_column("ID", style="dim")
-            set_table.add_column("Name")
-            set_table.add_column("Total Parts")
-            set_table.add_row(
-                str(lego_set["id"]),
-                lego_set["name"],
-                str(len(lego_set["parts"]))
-            )
-            console.print(set_table)
-            
-            # Parts table
-            parts_table = Table(show_header=True, header_style="bold cyan")
-            parts_table.title = "Required Parts"
-            parts_table.add_column("Part ID", style="dim")
-            parts_table.add_column("Part Name")
-            parts_table.add_column("Colour")
-            parts_table.add_column("Shape")
-            parts_table.add_column("Quantity", justify="right")
-            
-            for item in lego_set["parts"]:
-                part = item["part"]
-                parts_table.add_row(
-                    str(part["id"]),
-                    part["name"],
-                    part["colour"]["name"],
-                    part["shape"]["name"],
-                    str(item["quantity"])
-                )
-            console.print(parts_table)
-            console.print("")  # Empty line between sets
-        
-    except requests.exceptions.RequestException as e:
-        console.print(f"[red]Error fetching possible sets: {e}[/red]")
-        raise typer.Exit(1)
-
 
 if __name__ == "__main__":
     app()
