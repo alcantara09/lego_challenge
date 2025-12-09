@@ -8,6 +8,10 @@ from src.domain.entities.colour import Colour
 
 class BricksRepository(ABC):
     @abstractmethod
+    def create_colour(self, colour: Colour) -> Colour:
+        pass
+
+    @abstractmethod
     def get_all_sets(self) -> list[Set]:
         pass
 
@@ -21,10 +25,6 @@ class BricksRepository(ABC):
 
     @abstractmethod
     def get_set_by_name(self, name: str) -> Set:
-        pass
-
-    @abstractmethod
-    def create_colour(self, colour: Any) -> Any:
         pass
 
     @abstractmethod

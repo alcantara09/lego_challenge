@@ -1,5 +1,6 @@
 from sqlmodel import Field, Session, SQLModel, select, Relationship
 
+
 class Colour(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
@@ -21,18 +22,19 @@ class InventoryPartLink(SQLModel, table=True):
 class Part(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
-    shape_id: int = Field(foreign_key="shape.id")
-    colour_id: int = Field(foreign_key="colour.id")
+    colour_id: int
     sets: list["Set"] = Relationship(back_populates="parts", link_model=SetPartLink)
     inventories: list["Inventory"] = Relationship(back_populates="parts", link_model=InventoryPartLink)
 
 class Set(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
+    id: str | None = Field(default=None, primary_key=True)
     name: str
+    totalPieces: int
     parts: list[Part] = Relationship(back_populates="sets", link_model=SetPartLink)
 
 class User(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
+    id: str | None = Field(default=None, primary_key=True)
+    brick_count: int
     name: str
     inventory_id: int = Field(foreign_key="inventory.id")
 

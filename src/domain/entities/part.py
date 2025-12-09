@@ -4,7 +4,5 @@ from src.domain.entities.shape import Shape
 
 @dataclass
 class Part:
-    name: str
-    shape: Shape
-    colour: Colour
+    material_id: str
     id: int = field(default_factory=int)

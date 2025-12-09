@@ -1,3 +1,4 @@
+from requests import session
 from sqlmodel import Session, select
 from src.ports.repositories.sql_brick_repository_schema import (
     Colour,
@@ -40,80 +41,55 @@ class SQLBrickRepository(BricksRepository):
                 DomainColour(id=colour.id, name=colour.name) for colour in db_colours
             ]
 
-    def create_shape(self, shape: DomainShape) -> DomainShape:
-        with self.session as session:
-            db_shape = Shape(name=shape.name)
-            session.add(db_shape)
-            session.commit()
-            session.refresh(db_shape)
-            return DomainShape(id=db_shape.id, name=db_shape.name)
-
     def create_part(self, part: DomainPart) -> DomainPart:
         with self.session as session:
             db_part = Part(
-                name=part.name, colour_id=part.colour.id, shape_id=part.shape.id
+                name=part.id,
+                colour_id=part.material_id
             )
             session.add(db_part)
             session.commit()
             session.refresh(db_part)
-            colour = DomainColour(id=part.colour.id, name=part.colour.name)
-            shape = DomainShape(id=part.shape.id, name=part.shape.name)
             return DomainPart(
-                id=db_part.id, name=db_part.name, colour=colour, shape=shape
-            )
+                id=db_part.id,
+                material_id=part.material_id)
 
     def get_all_parts(self, offset: int = 0, limit: int = 100) -> list[DomainPart]:
         with self.session as session:
-            statement = (
-                select(
-                    Part.id.label("part_id"),
-                    Part.name.label("part_name"),
-                    Colour.id.label("colour_id"),
-                    Colour.name.label("colour_name"),
-                    Shape.id.label("shape_id"),
-                    Shape.name.label("shape_name")
+            db_parts = session.exec(select(Part)).all()
+
+            return [
+                DomainPart(
+                    id=row.name, material_id=row.colour_id
                 )
-                .join(Colour, Part.colour_id == Colour.id)
-                .join(Shape, Part.shape_id == Shape.id)
-                .offset(offset)
-                .limit(limit)
-            )
-            
-            results = session.exec(statement).all()
-            
-            parts = []
-            for row in results:
-                colour = DomainColour(id=row.colour_id, name=row.colour_name)
-                shape = DomainShape(id=row.shape_id, name=row.shape_name)
-                part = DomainPart(
-                    id=row.part_id,
-                    name=row.part_name,
-                    colour=colour,
-                    shape=shape
-                )
-                parts.append(part)
-            
-            return parts
+                for row in db_parts
+            ]
 
     def create_set(self, lego_set: DomainSet) -> DomainSet:
         with self.session as session:
             # Create set
-            db_set = Set(name=lego_set.name)
+            #print("Creating set:", lego_set.id)
+            if lego_set.id is None:
+                raise Exception("Set must have an ID to be created.")
+            db_set = Set(name=lego_set.name, id=str(lego_set.id), totalPieces=lego_set.totalPieces)
             session.add(db_set)
-            session.commit()
+            session.flush()
             session.refresh(db_set)
             
             # Create SetPartLink entries for each part
             valid_items = []
             for item in lego_set.parts:
-                # Check if part exists
-                db_part = session.get(Part, item.part.id)
+                if item.part.id is None:
+                    raise Exception("Part must have an ID to be added to a set.")
+                # Check if part existss
+                statement = select(Part).where(Part.name == item.part.id, Part.colour_id == item.part.material_id)
+                db_part = session.exec(statement).first()
                 if db_part is None:
-                    raise ValueError(f"Part with id {item.part.id} does not exist")
+                    db_part = self.create_part(item.part)
                 
                 set_part_link = SetPartLink(
                     set_id=db_set.id,
-                    part_id=item.part.id,
+                    part_id=db_part.id,
                     quantity=item.quantity
                 )
                 session.add(set_part_link)
@@ -124,7 +100,8 @@ class SQLBrickRepository(BricksRepository):
             return DomainSet(
                 id=db_set.id,
                 name=db_set.name,
-                parts=valid_items
+                parts=valid_items,
+                totalPieces=db_set.totalPieces
             )
 
     def get_all_sets(self, offset: int = 0, limit: int = 100) -> list[DomainSet]:
@@ -133,20 +110,14 @@ class SQLBrickRepository(BricksRepository):
                 select(
                     Set.id.label("set_id"),
                     Set.name.label("set_name"),
+                    Set.totalPieces.label("total_pieces"),
                     Part.id.label("part_id"),
                     Part.name.label("part_name"),
-                    Colour.id.label("colour_id"),
-                    Colour.name.label("colour_name"),
-                    Shape.id.label("shape_id"),
-                    Shape.name.label("shape_name"),
+                    Part.colour_id.label("part_colour_id"),
                     SetPartLink.quantity.label("quantity")
                 )
                 .outerjoin(SetPartLink, Set.id == SetPartLink.set_id)
                 .outerjoin(Part, SetPartLink.part_id == Part.id)
-                .outerjoin(Colour, Part.colour_id == Colour.id)
-                .outerjoin(Shape, Part.shape_id == Shape.id)
-                .offset(offset)
-                .limit(limit)
             )
             
             results = session.exec(statement).all()
@@ -160,6 +131,7 @@ class SQLBrickRepository(BricksRepository):
                     sets_dict[set_id] = {
                         "set_id": row.set_id,
                         "set_name": row.set_name,
+                        "total_pieces": row.total_pieces,
                         "items": []
                     }
                 
@@ -167,9 +139,7 @@ class SQLBrickRepository(BricksRepository):
                 if row.part_id is None:
                     continue
                 
-                colour = DomainColour(id=row.colour_id, name=row.colour_name)
-                shape = DomainShape(id=row.shape_id, name=row.shape_name)
-                part = DomainPart(id=row.part_id, name=row.part_name, colour=colour, shape=shape)
+                part = DomainPart(id=row.part_name, material_id=row.part_colour_id)
                 
                 set_item = DomainSetItem(part=part, quantity=row.quantity)
                 sets_dict[set_id]["items"].append(set_item)
@@ -180,9 +150,11 @@ class SQLBrickRepository(BricksRepository):
                 domain_set = DomainSet(
                     id=set_data["set_id"],
                     name=set_data["set_name"],
-                    parts=set_data["items"]
+                    parts=set_data["items"],
+                    totalPieces=set_data["total_pieces"]
                 )
                 domain_sets.append(domain_set)
+                #print(set_data["total_pieces"])
             
             return domain_sets
 
@@ -239,18 +211,14 @@ class SQLBrickRepository(BricksRepository):
                 select(
                     Set.id.label("set_id"),
                     Set.name.label("set_name"),
+                    Set.totalPieces.label("total_pieces"),
                     Part.id.label("part_id"),
                     Part.name.label("part_name"),
-                    Colour.id.label("colour_id"),
-                    Colour.name.label("colour_name"),
-                    Shape.id.label("shape_id"),
-                    Shape.name.label("shape_name"),
+                    Part.colour_id.label("part_colour_id"),
                     SetPartLink.quantity.label("quantity")
                 )
                 .outerjoin(SetPartLink, Set.id == SetPartLink.set_id)
                 .outerjoin(Part, SetPartLink.part_id == Part.id)
-                .outerjoin(Colour, Part.colour_id == Colour.id)
-                .outerjoin(Shape, Part.shape_id == Shape.id)
                 .where(Set.name == name)
             )
             
@@ -265,20 +233,19 @@ class SQLBrickRepository(BricksRepository):
                 # Skip if no part (empty set)
                 if row.part_id is None:
                     continue
-                
-                colour = DomainColour(id=row.colour_id, name=row.colour_name)
-                shape = DomainShape(id=row.shape_id, name=row.shape_name)
-                part = DomainPart(id=row.part_id, name=row.part_name, colour=colour, shape=shape)
+                part = DomainPart(id=row.part_name, material_id=row.part_colour_id)
                 
                 set_item = DomainSetItem(part=part, quantity=row.quantity)
                 items.append(set_item)
             
-            first_row = results[0]
+            set_data = results[0]
             return DomainSet(
-                id=first_row.set_id,
-                name=first_row.set_name,
-                parts=items
-            )
+                    id=set_data[0],
+                    name=set_data[1],
+                    parts=items,
+                    totalPieces=set_data[2]
+                )
+
 
     def get_parts_by_set_id(self, set_id: int) -> list[DomainSetItem]:
         with self.session as session:
@@ -348,7 +315,6 @@ class SQLBrickRepository(BricksRepository):
                     Part.name.label("part_name"),
                     Colour.id.label("colour_id"),
                     Colour.name.label("colour_name"),
-                    Shape.id.label("shape_id"),
                     Shape.name.label("shape_name"),
                     InventoryPartLink.quantity.label("quantity"),
                 )
@@ -387,13 +353,11 @@ class SQLBrickRepository(BricksRepository):
                 select(
                     User.id.label("user_id"),
                     User.name.label("user_name"),
+                    User.brick_count.label("brick_count"),
                     Inventory.id.label("inventory_id"),
                     Part.id.label("part_id"),
                     Part.name.label("part_name"),
-                    Colour.id.label("colour_id"),
-                    Colour.name.label("colour_name"),
-                    Shape.id.label("shape_id"),
-                    Shape.name.label("shape_name"),
+                    Part.colour_id.label("part_colour_id"),
                     InventoryPartLink.quantity.label("quantity"),
                 )
                 .join(Inventory, User.inventory_id == Inventory.id)
@@ -401,8 +365,6 @@ class SQLBrickRepository(BricksRepository):
                     InventoryPartLink, Inventory.id == InventoryPartLink.inventory_id
                 )
                 .outerjoin(Part, InventoryPartLink.part_id == Part.id)
-                .outerjoin(Colour, Part.colour_id == Colour.id)
-                .outerjoin(Shape, Part.shape_id == Shape.id)
                 .where(User.id == user_id)
             )
 
@@ -418,10 +380,8 @@ class SQLBrickRepository(BricksRepository):
                 if row.part_id is None:
                     continue
 
-                colour = DomainColour(id=row.colour_id, name=row.colour_name)
-                shape = DomainShape(id=row.shape_id, name=row.shape_name)
                 part = DomainPart(
-                    id=row.part_id, name=row.part_name, colour=colour, shape=shape
+                    id=row.part_name, material_id=row.part_colour_id,
                 )
 
                 inventory_item = DomainInventoryItem(part=part, quantity=row.quantity)
@@ -431,7 +391,7 @@ class SQLBrickRepository(BricksRepository):
             inventory = DomainInventory(id=first_row.inventory_id, parts=items)
 
             return DomainUser(
-                id=first_row.user_id, name=first_row.user_name, inventory=inventory
+                id=first_row.user_id, name=first_row.user_name, inventory=inventory, brick_count=first_row.brick_count
             )
 
     def get_user_by_name(self, name: str) -> DomainUser | None:
@@ -499,13 +459,14 @@ class SQLBrickRepository(BricksRepository):
             valid_items = []
             for item in user.inventory.parts:
                 # Check if part exists
-                db_part = session.get(Part, item.part.id)
+                statement = select(Part).where(Part.name == item.part.id, Part.colour_id == item.part.material_id)
+                db_part = session.exec(statement).first()
                 if db_part is None:
-                    raise ValueError(f"Part with id {item.part.id} does not exist")
+                    db_part = self.create_part(item.part)
 
                 inventory_part_link = InventoryPartLink(
                     inventory_id=db_inventory.id,
-                    part_id=item.part.id,
+                    part_id=db_part.id,
                     quantity=item.quantity,
                 )
                 session.add(inventory_part_link)
@@ -514,15 +475,16 @@ class SQLBrickRepository(BricksRepository):
             session.commit()
 
             # Create user with inventory
-            db_user = User(name=user.name, inventory_id=db_inventory.id)
+            db_user = User(id=user.id, name=user.name, inventory_id=db_inventory.id, brick_count=user.brick_count)
             session.add(db_user)
             session.commit()
             session.refresh(db_user)
+            #print("Created user with ID:", db_user.id)
 
             # Return DomainUser with full inventory
             inventory = DomainInventory(id=db_inventory.id, parts=valid_items)
 
-            return DomainUser(id=db_user.id, name=db_user.name, inventory=inventory)
+            return DomainUser(id=db_user.id, name=db_user.name, inventory=inventory, brick_count=db_user.brick_count)
 
     def get_all_users(self, offset: int = 0, limit: int = 100) -> list[User]:
         with self.session as session:
@@ -530,22 +492,18 @@ class SQLBrickRepository(BricksRepository):
                 select(
                     User.id.label("user_id"),
                     User.name.label("user_name"),
+                    User.brick_count.label("brick_count"),
                     Inventory.id.label("inventory_id"),
                     Part.id.label("part_id"),
                     Part.name.label("part_name"),
-                    Colour.id.label("colour_id"),
-                    Colour.name.label("colour_name"),
-                    Shape.id.label("shape_id"),
-                    Shape.name.label("shape_name"),
+                    Part.colour_id.label("part_colour_id"),
                     InventoryPartLink.quantity.label("quantity"),
                 )
                 .join(Inventory, User.inventory_id == Inventory.id)
-                .join(InventoryPartLink, Inventory.id == InventoryPartLink.inventory_id)
-                .join(Part, InventoryPartLink.part_id == Part.id)
-                .join(Colour, Part.colour_id == Colour.id)
-                .join(Shape, Part.shape_id == Shape.id)
-                .offset(offset)
-                .limit(limit)
+                .outerjoin(
+                    InventoryPartLink, Inventory.id == InventoryPartLink.inventory_id
+                )
+                .outerjoin(Part, InventoryPartLink.part_id == Part.id)
             )
 
             results = session.exec(statement).all()
@@ -559,13 +517,11 @@ class SQLBrickRepository(BricksRepository):
                         "user_id": row.user_id,
                         "user_name": row.user_name,
                         "inventory_id": row.inventory_id,
+                        "brick_count": row.brick_count,
                         "items": [],
                     }
-
-                colour = DomainColour(id=row.colour_id, name=row.colour_name)
-                shape = DomainShape(id=row.shape_id, name=row.shape_name)
                 part = DomainPart(
-                    id=row.part_id, name=row.part_name, colour=colour, shape=shape
+                    id=row.part_name, material_id=row.part_colour_id,
                 )
 
                 inventory_item = DomainInventoryItem(part=part, quantity=row.quantity)
@@ -581,6 +537,7 @@ class SQLBrickRepository(BricksRepository):
                     id=user_data["user_id"],
                     name=user_data["user_name"],
                     inventory=inventory,
+                    brick_count=user_data["brick_count"]
                 )
 
                 domain_users.append(user)
