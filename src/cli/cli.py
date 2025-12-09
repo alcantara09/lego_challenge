@@ -329,5 +329,59 @@ def suggest_users(user_id: int, set_id: int):
         console.print(f"[red]Error fetching suggested users: {e}[/red]")
         raise typer.Exit(1)
 
+@app.command()
+def get_possible_sets(user_id: int):
+    """
+    Get possible sets a user can build from the API.
+    """
+    try:
+        response = requests.get(f"{url_base}/api/user/by-id/{user_id}/possible-sets")
+        response.raise_for_status()
+        response_data = response.json()
+        
+        if not response_data["data"]:
+            console.print(f"[yellow]No sets can be built by user {user_id}[/yellow]")
+            return
+        
+        for lego_set in response_data["data"]:
+            # Set info table
+            set_table = Table(show_header=True, header_style="bold magenta")
+            set_table.title = f"Set: {lego_set['name']}"
+            set_table.add_column("ID", style="dim")
+            set_table.add_column("Name")
+            set_table.add_column("Total Parts")
+            set_table.add_row(
+                str(lego_set["id"]),
+                lego_set["name"],
+                str(len(lego_set["parts"]))
+            )
+            console.print(set_table)
+            
+            # Parts table
+            parts_table = Table(show_header=True, header_style="bold cyan")
+            parts_table.title = "Required Parts"
+            parts_table.add_column("Part ID", style="dim")
+            parts_table.add_column("Part Name")
+            parts_table.add_column("Colour")
+            parts_table.add_column("Shape")
+            parts_table.add_column("Quantity", justify="right")
+            
+            for item in lego_set["parts"]:
+                part = item["part"]
+                parts_table.add_row(
+                    str(part["id"]),
+                    part["name"],
+                    part["colour"]["name"],
+                    part["shape"]["name"],
+                    str(item["quantity"])
+                )
+            console.print(parts_table)
+            console.print("")  # Empty line between sets
+        
+    except requests.exceptions.RequestException as e:
+        console.print(f"[red]Error fetching possible sets: {e}[/red]")
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()
