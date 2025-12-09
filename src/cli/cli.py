@@ -19,14 +19,14 @@ def get_users():
     try:
         response = requests.get(f"{url_base}/api/users/")
         response.raise_for_status()
-        users = response.json()["data"]
+        response_data = response.json()
         
         table = Table(show_header=True, header_style="bold magenta")
-        table.title = "User Information"
+        table.title = response_data["message"]
         table.add_column("ID", style="dim")
         table.add_column("Name")        
-        for user in users:
-            table.add_row(str(user[0]), user[1])        
+        for user in response_data["data"]:
+            table.add_row(str(user["id"]), user["name"])        
         console.print(table)
         
     except requests.exceptions.RequestException as e:
@@ -88,18 +88,15 @@ def get_user_by_name(name: str):
     try:
         response = requests.get(f"{url_base}/api/user/by-name/{name}")
         response.raise_for_status()
-        data = response.json()["data"]
-        
-        # data format: [[id, name, {part_name: quantity}]]
-        user_id, user_name, parts = data[0]
+        response_data = response.json()
+        user = response_data["data"][0]
         
         # User info table
         table = Table(show_header=True, header_style="bold magenta")
         table.title = "User Information"
         table.add_column("ID", style="dim")
         table.add_column("Name")
-        
-        table.add_row(str(user_id), user_name)
+        table.add_row(str(user["id"]), user["name"])
         console.print(table)
         
         # Parts table
@@ -108,7 +105,7 @@ def get_user_by_name(name: str):
         table.add_column("Part Name")
         table.add_column("Quantity", justify="right")
         
-        for part_name, quantity in parts.items():
+        for part_name, quantity in user["parts"].items():
             table.add_row(part_name, str(quantity))
         console.print(table)
         
@@ -124,14 +121,14 @@ def get_sets():
     try:
         response = requests.get(f"{url_base}/api/sets/")
         response.raise_for_status()
-        sets = response.json()
+        response_data = response.json()
         
         table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Sets Information"
+        table.title = response_data["message"]
         table.add_column("ID", style="dim")
         table.add_column("Name")        
-        for set_ in sets:
-             table.add_row(str(set_["id"]), set_["name"])        
+        for set_ in response_data["data"]:
+            table.add_row(str(set_["id"]), set_["name"])        
         console.print(table)
         
     except requests.exceptions.RequestException as e:
@@ -146,21 +143,36 @@ def get_set_by_name(name: str):
     try:
         response = requests.get(f"{url_base}/api/set/by-name/{name}")
         response.raise_for_status()
-        brick_set = response.json()
-        print(brick_set)
+        response_data = response.json()
+        brick_set = response_data["data"]
         
+        # Set info table
         table = Table(show_header=True, header_style="bold magenta")
         table.title = "Set Information"
         table.add_column("ID", style="dim")
         table.add_column("Name")
         table.add_column("Number of Parts")
-        table.add_row(str(brick_set["id"]), brick_set["name"], str(len(brick_set["required_parts"])))
+        table.add_row(
+            str(brick_set["id"]), 
+            brick_set["name"], 
+            str(len(brick_set["parts"]))
+        )
+        console.print(table)
+        
+        # Parts table
+        table = Table(show_header=True, header_style="bold magenta")
+        table.title = "Required Parts"
+        table.add_column("Part Name")
+        table.add_column("Quantity", justify="right")
+        
+        for part_name, quantity in brick_set["parts"].items():
+            table.add_row(part_name, str(quantity))
         console.print(table)
         
     except requests.exceptions.RequestException as e:
         console.print(f"[red]Error fetching set: {e}[/red]")
         raise typer.Exit(1)
-    
+
 @app.command()
 def get_set_by_id(id: int):
     """
@@ -176,16 +188,30 @@ def get_set_by_id(id: int):
         table.add_column("ID", style="dim")
         table.add_column("Name")
         table.add_column("Number of Parts")
-        table.add_row(str(brick_set["id"]), brick_set["name"], str(len(brick_set["required_parts"])))
+        table.add_row(
+            str(brick_set["id"]), 
+            brick_set["name"], 
+            str(len(brick_set["parts"]))
+        )
         console.print(table)
 
         table = Table(show_header=True, header_style="bold magenta")
         table.title = "Required Parts"
         table.add_column("Part ID", style="dim")
         table.add_column("Part Name")
+        table.add_column("Colour")
+        table.add_column("Shape")
         table.add_column("Quantity", justify="right")
-        for part_id, qty in brick_set["required_parts"].items():
-            table.add_row(str(part_id), "part[part_name]", str(qty))
+        
+        for item in brick_set["parts"]:
+            part = item["part"]
+            table.add_row(
+                str(part["id"]),
+                part["name"],
+                part["colour"]["name"],
+                part["shape"]["name"],
+                str(item["quantity"])
+            )
         console.print(table)
         
     except requests.exceptions.RequestException as e:
@@ -200,14 +226,14 @@ def get_colours():
     try:
         response = requests.get(f"{url_base}/api/colours/")
         response.raise_for_status()
-        colours = response.json()
+        response_data = response.json()
         
         table = Table(show_header=True, header_style="bold magenta")
-        table.title = "Colours Information"
+        table.title = response_data["message"]
         table.add_column("ID", style="dim")
         table.add_column("Name")        
-        for colour in colours:
-             table.add_row(str(colour["id"]), colour["name"])        
+        for colour in response_data["data"]:
+            table.add_row(str(colour["id"]), colour["name"])        
         console.print(table)
         
     except requests.exceptions.RequestException as e:
@@ -220,7 +246,7 @@ def get_part_usage(percentage: float = 0.5):
     Get parts with usage above a certain percentage from the API.
     """
     try:
-        response = requests.get(f"{url_base}/api/users/part-usage/{percentage}")
+        response = requests.get(f"{url_base}/api/users/part-usage/")
         response.raise_for_status()
         parts_usage = response.json()["data"]
         
