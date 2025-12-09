@@ -3,8 +3,8 @@ from sqlmodel import SQLModel, Session, create_engine
 from src.domain.entities.colour import Colour
 from src.domain.entities.shape import Shape
 from src.domain.entities.part import Part
-from src.domain.entities.set import Set
-from src.domain.entities.inventory import Inventory
+from src.domain.entities.set import Set, SetItem
+from src.domain.entities.inventory import Inventory, InventoryItem
 from src.domain.entities.user import User
 
 from src.ports.repositories.sql_brick_repository import SQLBrickRepository
@@ -12,7 +12,6 @@ from src.ports.repositories.sql_brick_repository import SQLBrickRepository
 sqlite_url = "sqlite:///:database.db:"
 engine = create_engine(sqlite_url, echo=False)
 SQLModel.metadata.create_all(engine)
-
 
 with Session(engine) as session:
     brick_repository = SQLBrickRepository(session)
@@ -45,54 +44,52 @@ with Session(engine) as session:
     blue_brick_big = brick_repository.create_part(blue_brick_big)
     yellow_brick_big = brick_repository.create_part(yellow_brick_big)
 
+    # Use SetItem for parts in Set
     set1 = Set(
         name="Small Set",
-        required_parts={
-            red_brick_small.id: 4,
-            blue_brick_small.id: 2,
-            yellow_brick_small.id: 1,
-        },
+        parts=[
+            SetItem(part=red_brick_small, quantity=4),
+            SetItem(part=blue_brick_small, quantity=2),
+            SetItem(part=yellow_brick_small, quantity=1),
+        ],
     )
     set2 = Set(
         name="Big Set",
-        required_parts={
-            red_brick_small.id: 5,
-            blue_brick_small.id: 3,
-            yellow_brick_small.id: 2,
-            red_brick_big.id: 6,
-            blue_brick_big.id: 4,
-        },
+        parts=[
+            SetItem(part=red_brick_small, quantity=5),
+            SetItem(part=blue_brick_small, quantity=3),
+            SetItem(part=yellow_brick_small, quantity=2),
+            SetItem(part=red_brick_big, quantity=6),
+            SetItem(part=blue_brick_big, quantity=4),
+        ],
     )
     set1 = brick_repository.create_set(set1)
     set2 = brick_repository.create_set(set2)
 
-    inventory_user_1 = Inventory(parts={
-        red_brick_small.id: 4,
-        blue_brick_small.id: 2,
-        yellow_brick_small.id: 1
-    })
-
+    # Use InventoryItem for parts in Inventory
+    inventory_user_1 = Inventory(parts=[
+        InventoryItem(part=red_brick_small, quantity=4),
+        InventoryItem(part=blue_brick_small, quantity=2),
+        InventoryItem(part=yellow_brick_small, quantity=1),
+    ])
     user_1 = User(name="User 1", inventory=inventory_user_1)
 
-    inventory_user_2 = Inventory(parts={
-        red_brick_small.id: 4,
-        blue_brick_small.id: 2,
-        yellow_brick_small.id: 1
-    })
-
+    inventory_user_2 = Inventory(parts=[
+        InventoryItem(part=red_brick_small, quantity=4),
+        InventoryItem(part=blue_brick_small, quantity=2),
+        InventoryItem(part=yellow_brick_small, quantity=1),
+    ])
     user_2 = User(name="User 2", inventory=inventory_user_2)
 
-    inventory_user_3 = Inventory(parts={
-        red_brick_big.id: 6,
-        blue_brick_big.id: 4,
-    })
-
+    inventory_user_3 = Inventory(parts=[
+        InventoryItem(part=red_brick_big, quantity=6),
+        InventoryItem(part=blue_brick_big, quantity=4),
+    ])
     user_3 = User(name="User 3", inventory=inventory_user_3)
 
-    inventory_user_4 = Inventory(parts={
-        yellow_brick_big.id: 10
-    })
-
+    inventory_user_4 = Inventory(parts=[
+        InventoryItem(part=yellow_brick_big, quantity=10),
+    ])
     user_4 = User(name="User 4", inventory=inventory_user_4)
 
     brick_repository.create_user(user_1)
