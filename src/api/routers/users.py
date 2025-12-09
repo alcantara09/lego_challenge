@@ -6,7 +6,7 @@ from src.domain.entities.user import User
 from src.ports.repositories.bricks_repository import BricksRepository
 from src.api.dependencies import get_analyse_buildability_use_case, get_brick_repository, get_session
 from src.domain.use_cases.analyse_buildability import AnalyseBuildability
-from src.api.routers.models import UserModel, set_to_model, user_to_model
+from src.api.routers.models import UserModel, set_to_model, user_to_model, part_to_model
 from src.api.routers.response_models import ErrorResponse, PartUsageResponse, PossibleSetsResponse, SuggestedUsersResponse, UserByNameData, UserByNameResponse, UserSummary, UsersListResponse
 
 router = APIRouter(
@@ -155,7 +155,7 @@ async def get_user_by_name(
     )
 
 @router.get(
-    "/users/part-usage",
+    "/users/part-usage/",
     response_model=PartUsageResponse,
     status_code=status.HTTP_200_OK,
     summary="Get parts by usage percentage",
@@ -166,6 +166,7 @@ async def get_user_by_name(
 )
 async def get_parts_with_percentage_of_usage(
     analyse_buildability_use_case: UseCaseDep,
+    brick_repository: RepoDep,
     percentage: float = Query(
         default=0.5,
         ge=0.0,
@@ -174,13 +175,6 @@ async def get_parts_with_percentage_of_usage(
     )
 ):
     parts_usage = analyse_buildability_use_case.get_parts_with_percentage_of_usage(percentage)
+    parts_usage = [[part_to_model(part), quantity] for part, quantity in parts_usage]
     
-    # Convert to response format with full part details
-    result = []
-    for part_id, quantity in parts_usage.items():
-        part = analyse_buildability_use_case.bricks_repository.get_part_by_id(part_id)
-        if part:
-            from src.api.routers.models import part_to_model
-            result.append([part_to_model(part), quantity])
-    
-    return PartUsageResponse(data=result)
+    return PartUsageResponse(data=parts_usage)
